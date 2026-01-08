@@ -12,8 +12,28 @@ const KioskRunner: React.FC<KioskRunnerProps> = ({ settings, onExit }) => {
   const [wakeLockEnabled, setWakeLockEnabled] = useState(false);
   const wakeLockRef = useRef<any>(null);
   const [lastActivity, setLastActivity] = useState(Date.now());
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // 1. Wake Lock API: Comando direto ao navegador para não apagar a tela
+  // Função para simular interação real no navegador
+  const simulateActivity = () => {
+    // Dispara um evento de movimento de mouse sintético
+    const event = new MouseEvent('mousemove', {
+      view: window,
+      bubbles: true,
+      cancelable: true,
+      clientX: Math.random() * window.innerWidth,
+      clientY: Math.random() * window.innerHeight
+    });
+    window.dispatchEvent(event);
+    
+    // Dispara um evento de scroll minúsculo e volta
+    window.scrollBy(0, 1);
+    window.scrollBy(0, -1);
+    
+    setLastActivity(Date.now());
+  };
+
+  // 1. Wake Lock API (Manter tela ligada via software)
   useEffect(() => {
     if (!settings.wakeLockActive) return;
 
@@ -22,9 +42,7 @@ const KioskRunner: React.FC<KioskRunnerProps> = ({ settings, onExit }) => {
         if ('wakeLock' in navigator) {
           wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
           setWakeLockEnabled(true);
-          console.log('Wake Lock ativado com sucesso.');
           
-          // Re-solicitar se a aba voltar a ficar visível (WebOS pode liberar o lock se minimizar)
           document.addEventListener('visibilitychange', async () => {
             if (wakeLockRef.current !== null && document.visibilityState === 'visible') {
               wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
@@ -37,50 +55,55 @@ const KioskRunner: React.FC<KioskRunnerProps> = ({ settings, onExit }) => {
     };
 
     requestWakeLock();
-
     return () => {
       if (wakeLockRef.current) wakeLockRef.current.release();
     };
   }, [settings.wakeLockActive]);
 
-  // 2. Jitter de Pixel (Movimento Pixel a Pixel):
-  // Desloca o container inteiro 1px para forçar re-renderização da GPU a cada 3 minutos (180000ms)
+  // 2. Coração de Atividade (Eventos Sintéticos a cada 30 segundos)
+  useEffect(() => {
+    const heartbeat = setInterval(simulateActivity, 30000);
+    return () => clearInterval(heartbeat);
+  }, []);
+
+  // 3. Jitter de Pixel (Movimento Físico da Tela a cada 2 minutos)
   useEffect(() => {
     if (!settings.pixelJitter) return;
 
     const interval = setInterval(() => {
+      // Move 1 pixel alternadamente
       setOffset(prev => ({
         x: prev.x === 0 ? 1 : 0,
         y: prev.y === 0 ? 1 : 0
       }));
-      setLastActivity(Date.now());
-    }, 180000); // Alterado para 3 minutos (3 * 60 * 1000)
+      simulateActivity(); // Reforça a atividade no momento do pulo
+    }, 120000); // 2 minutos (2 * 60 * 1000)
 
     return () => clearInterval(interval);
   }, [settings.pixelJitter]);
 
   return (
     <div 
+      ref={containerRef}
       className="relative w-screen h-screen overflow-hidden bg-black"
       style={{ 
-        padding: '2px', // Espaço para o jitter de 1px não cortar conteúdo
-        transform: `translate(${offset.x}px, ${offset.y}px)` 
+        padding: '2px',
+        transform: `translate(${offset.x}px, ${offset.y}px)`,
+        transition: 'transform 0.1s ease-in-out'
       }}
     >
-      {/* 3. Silent Video Hack: Truque clássico para WebOS não entrar em standby */}
+      {/* 4. Hack de Vídeo (Obrigatório para TVs LG) */}
       <video 
         autoPlay 
         loop 
         muted 
         playsInline 
-        className="fixed opacity-0 w-1 h-1 pointer-events-none"
+        className="fixed opacity-[0.01] w-1 h-1 pointer-events-none"
       >
-        <source src="https://raw.githubusercontent.com/anars/blank-audio/master/10-seconds-of-silence.mp3" type="audio/mp3" />
-        {/* Usando um source de vídeo pequeno e leve */}
         <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4" />
       </video>
 
-      {/* iframe do conteúdo principal */}
+      {/* Conteúdo Principal */}
       {settings.url ? (
         <iframe
           src={settings.url}
@@ -90,33 +113,36 @@ const KioskRunner: React.FC<KioskRunnerProps> = ({ settings, onExit }) => {
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-full text-slate-500">
-          <p className="text-2xl">Aguardando URL...</p>
+          <p className="text-2xl font-bold uppercase tracking-widest">Aguardando URL...</p>
         </div>
       )}
 
-      {/* Indicadores discretos e Botão de Saída */}
-      <div className="absolute top-4 right-4 flex items-center space-x-3 opacity-10 hover:opacity-100 transition-opacity duration-500">
-         <div className="bg-black/80 px-3 py-1.5 rounded-full border border-white/20 flex items-center space-x-2">
-            <div className={`w-2 h-2 rounded-full animate-pulse ${wakeLockEnabled ? 'bg-green-500' : 'bg-yellow-500'}`} />
-            <span className="text-[10px] text-white/70 font-mono tracking-tighter">
-               {wakeLockEnabled ? 'ACTIVE_LOCK' : 'WAIT_LOCK'} | ATUALIZADO: {new Date(lastActivity).toLocaleTimeString()}
-            </span>
+      {/* Status Bar (Discreta) */}
+      <div className="absolute bottom-4 left-4 flex items-center space-x-3 opacity-5 hover:opacity-100 transition-opacity duration-500">
+         <div className="bg-black/90 px-4 py-2 rounded-xl border border-white/10 flex items-center space-x-3 shadow-2xl">
+            <div className={`w-2 h-2 rounded-full ${wakeLockEnabled ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-red-500'}`} />
+            <div className="flex flex-col">
+              <span className="text-[9px] text-white/40 font-bold uppercase tracking-tighter">Status Atividade</span>
+              <span className="text-[10px] text-white font-mono leading-none">
+                {new Date(lastActivity).toLocaleTimeString()}
+              </span>
+            </div>
          </div>
          <button 
            onClick={onExit}
-           className="bg-red-600/20 hover:bg-red-600 text-white text-[10px] px-3 py-1.5 rounded-full border border-red-500/50 transition-colors"
+           className="bg-white/10 hover:bg-red-600 text-white text-[10px] px-4 py-2 rounded-xl border border-white/10 transition-all font-bold"
          >
            SAIR
          </button>
       </div>
       
-      {/* Simulação de Micro-Atividade Visual (Cursor invisível se movendo) */}
+      {/* Cursor Virtual (Simula movimento visual na tela) */}
       <div 
-        className="absolute w-1 h-1 bg-white/5 rounded-full pointer-events-none"
+        className="absolute w-2 h-2 bg-blue-500/20 rounded-full blur-[1px] pointer-events-none"
         style={{
-          top: `${Math.random() * 100}%`,
-          left: `${Math.random() * 100}%`,
-          transition: 'all 5s linear'
+          top: `${Math.random() * 80 + 10}%`,
+          left: `${Math.random() * 80 + 10}%`,
+          transition: 'all 1.5s ease-in-out'
         }}
       />
     </div>
