@@ -1,0 +1,5 @@
+{
+  "name": "StayAwake TV - Kiosk Utility",
+  "description": "Uma ferramenta projetada para Smart TVs LG WebOS para prevenir o modo standby através do Screen Wake Lock API e simulação de atividade visual pixel-a-pixel.",
+  "requestFramePermissions": []
+}
